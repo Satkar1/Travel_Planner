@@ -1,38 +1,25 @@
 import os
-from dotenv import load_dotenv
-from langchain_google_genai import ChatGoogleGenerativeAI
 import streamlit as st
+import google.generativeai as genai
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.chains import LLMChain
 from langchain.prompts import PromptTemplate
-import google.generativeai as genai
 import pandas as pd
 import io
 import plotly.graph_objects as go
 
-# Load environment variables
-load_dotenv()
-gemini_api_key = os.getenv("GEMINI_API_KEY")
+# ✅ Load API key from Streamlit Secrets (for Streamlit Cloud Deployment)
+gemini_api_key = st.secrets["GEMINI_API_KEY"]
 
 if not gemini_api_key:
-    st.error("GEMINI_API_KEY not found in .env file.")
+    st.error("GEMINI_API_KEY is missing! Add it in Streamlit Secrets.")
     st.stop()
 
-# Verify Gemini Flash availability
+# ✅ Configure Google Gemini AI
 genai.configure(api_key=gemini_api_key)
-available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash-exp", google_api_key=gemini_api_key)
 
-if 'models/gemini-2.0-flash-exp' not in available_models:
-    st.error("gemini-2.0-flash-exp is not available for your API key. Please check your Google Cloud project and API key.")
-    st.stop()
-
-# Initialize Google GenAI model (Gemini Flash)
-try:
-    llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash-exp", google_api_key=gemini_api_key)
-except Exception as e:
-    st.error(f"Error initializing Gemini Flash model: {e}")
-    st.stop()
-
-# Prompt Template
+# ✅ Define Prompt for Travel Recommendations
 prompt_template = PromptTemplate(
     input_variables=["source", "destination"],
     template="""
@@ -52,127 +39,89 @@ prompt_template = PromptTemplate(
     """
 )
 
-# LangChain LLMChain
+# ✅ Create LangChain LLMChain
 travel_chain = LLMChain(llm=llm, prompt=prompt_template)
 
-# Function to generate travel recommendations
+# ✅ Function to Fetch Travel Recommendations
 def get_travel_recommendations(source, destination):
     try:
         response = travel_chain.run({"source": source, "destination": destination})
-        if isinstance(response, str):
-            return response
-        else:
-            return response["text"]
+        return response if isinstance(response, str) else response["text"]
     except Exception as e:
         return f"An error occurred: {e}"
 
-# Streamlit UI
-st.title("AI-Powered Travel Planner")
-st.write("Find your optimal travel options!")
+# ✅ Streamlit UI
+st.title("🚀 AI-Powered Travel Planner")
+st.write("Find the best travel options using AI!")
 
-source = st.text_input("Enter Source City:")
-destination = st.text_input("Enter Destination City:")
+source = st.text_input("📍 Enter Source City:")
+destination = st.text_input("📍 Enter Destination City:")
 
-if st.button("Get Travel Options"):
+if st.button("🔍 Get Travel Options"):
     if source and destination:
-        st.write(f"Generating travel options from {source} to {destination}...")
+        st.write(f"Generating travel options from **{source}** to **{destination}**...")
         recommendations = get_travel_recommendations(source, destination)
         st.write("### Travel Recommendations:")
         st.write(recommendations)
-        # CSV Download and Chart Generation
+
+        # ✅ Process Data into a Table for Visualization
         try:
             table_data = recommendations.strip().split('\n')[2:-1]
             rows = [row.strip().split('|')[1:-1] for row in table_data]
             df = pd.DataFrame(rows, columns=["Travel Type", "Price (Estimated)", "Time (Estimated)", "Description", "Comfort Level", "Directness"])
 
-            # Convert Price and Time to numeric, handling potential errors
+            # Convert Price and Time to numeric values
             df["Price (Estimated)"] = pd.to_numeric(df["Price (Estimated)"].str.replace(r'[^\d\.]+', '', regex=True), errors='coerce')
             df["Time (Estimated)"] = pd.to_numeric(df["Time (Estimated)"].str.replace(r'[^\d\.]+', '', regex=True), errors='coerce')
 
-            # Create Price Chart
+            # ✅ Create Price Comparison Chart
             fig_price = go.Figure([go.Bar(x=df["Travel Type"], y=df["Price (Estimated)"])])
-            fig_price.update_layout(title="Price Comparison", xaxis_title="Travel Type", yaxis_title="Price")
+            fig_price.update_layout(title="💰 Price Comparison", xaxis_title="Travel Type", yaxis_title="Price (₹)")
             st.plotly_chart(fig_price)
 
-            # Create Time Chart
+            # ✅ Create Time Comparison Chart
             fig_time = go.Figure([go.Bar(x=df["Travel Type"], y=df["Time (Estimated)"])])
-            fig_time.update_layout(title="Time Comparison", xaxis_title="Travel Type", yaxis_title="Time")
+            fig_time.update_layout(title="⏳ Time Comparison", xaxis_title="Travel Type", yaxis_title="Time (Hours)")
             st.plotly_chart(fig_time)
 
-            # Create a combined chart
-            fig = go.Figure()
-
-            # Add Price line
-            fig.add_trace(go.Line(
-                x=df["Travel Type"],
-                y=df["Price (Estimated)"],
-                name="Price",
-                marker_color="skyblue"
-            ))
-
-            # Add Time line
-            fig.add_trace(go.Line(
-                x=df["Travel Type"],
-                y=df["Time (Estimated)"],
-                name="Time",
-                marker_color="salmon"
-            ))
-
-            # Update layout
-            fig.update_layout(
-                title="Price and Time Comparison by Travel Type",
-                xaxis_title="Travel Type",
-                yaxis_title="Value (Price/Time)",
-                barmode="group",  # Groups line for each Travel Type
-                legend=dict(
-                    orientation="h",  # Horizontal legend
-                    yanchor="bottom",
-                    y=1.02,
-                    xanchor="right",
-                    x=1
-                )
-            )
-
-            # Display the chart in Streamlit
-            st.plotly_chart(fig)
-
-            # CSV Download
+            # ✅ CSV Download Button
             csv_buffer = io.StringIO()
             df.to_csv(csv_buffer, index=False)
-            st.download_button(label="Download Travel Data as CSV", data=csv_buffer.getvalue(), file_name="travel_data.csv", mime="text/csv")
+            st.download_button(label="📥 Download Travel Data as CSV", data=csv_buffer.getvalue(), file_name="travel_data.csv", mime="text/csv")
 
         except Exception as e:
-            st.error(f"Error processing data or creating charts/CSV: {e}")
+            st.error(f"⚠️ Error processing data or creating charts: {e}")
 
     else:
-        st.error("Please enter both source and destination cities.")
+        st.error("❌ Please enter both source and destination cities.")
 
-# Add detailed project description to sidebar.
-st.sidebar.header("Project Details")
+# ✅ Sidebar Information
+st.sidebar.header("ℹ️ About This App")
 st.sidebar.write("""
-This application utilizes LangChain and Google GenAI to provide travel recommendations. 
-Enter the source and destination cities, and the AI will generate a list of travel options.
-""")
-st.sidebar.subheader("Tech Stack")
-st.sidebar.write("""
-- Python
-- Streamlit
-- LangChain
-- Google Gemini Flash (via langchain-google-genai)
-- python-dotenv
-- pandas
-- plotly
+This application utilizes **LangChain + Google Gemini AI** to provide travel recommendations.
+Just enter your source and destination, and AI will generate a list of travel options! 🚀
 """)
 
-st.sidebar.subheader("Instructions")
+st.sidebar.subheader("🔧 Tech Stack")
 st.sidebar.write("""
-1. Create a `.env` file and add your GEMINI_API_KEY.
-2. Install the required libraries:
-    ```bash
-    pip install streamlit langchain-google-genai python-dotenv google-generativeai pandas plotly
-    ```
-3. Run the application:
-    ```bash
-    streamlit run `app.py`
-    ```
+- **Python**
+- **Streamlit**
+- **LangChain**
+- **Google Gemini AI**
+- **pandas**
+- **plotly**
+""")
+
+st.sidebar.subheader("🛠️ Deployment Instructions")
+st.sidebar.write("""
+1️⃣ Create a **GitHub repository** and upload `app.py` and `requirements.txt`.  
+2️⃣ Go to **Streamlit Cloud** → **New App**.  
+3️⃣ Select your GitHub repository.  
+4️⃣ **Set API Key in Streamlit Secrets**:
+   - Open **Settings > Secrets**.
+   - Add:
+     ```
+     GEMINI_API_KEY = your-api-key-here
+     ```
+5️⃣ Click **Deploy** and your app will be live! 🎉
 """)
